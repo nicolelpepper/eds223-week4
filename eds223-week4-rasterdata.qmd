@@ -1,0 +1,253 @@
+---
+title: "EDS 223 - Working with Raster Data"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(terra)
+library(geodata)
+library(tidyverse)
+library(tmap)
+library(kableExtra)
+library(spData)
+library(spDataLarge)
+
+```
+
+
+```{r}
+zion_elevation <- rast(system.file(filename = "raster/srtm.tif", package = "spDataLarge"))
+
+zion_land <- rast(system.file(filename = "raster/nlcd.tif", package = "spDataLarge"))
+
+```
+
+```{r}
+tm_shape(zion_elevation) + 
+  tm_raster(title = "Elevation (m)")
+            
+tm_shape(zion_land) +
+  rm_raster(title = "Land Cover")
+```
+
+#### Investigate the raster:
+```{r}
+summary(zion_elevation)
+```
+
+```{r}
+zion_elevation
+```
+
+```{r}
+# Load in Landsat
+landsat <- rast(system.file("raster/landsat.tif", package = "spDataLarge"))
+landsat
+```
+
+```{r}
+tm_shape(landsat) +
+  tm_raster()
+```
+
+```{r}
+# Subset multi-layer data
+landsat3_a <- subset(landsat, 3)
+
+landsat3 <- subset(landsat,"landsat_3")
+  
+  tm_shape(landsat)
+```
+
+
+```{r}
+# Get global stats, mean
+global(zion_elevation, mean)
+
+# how many cells land in each land cover type
+freq(zion_land)
+```
+
+```{r}
+# Use bracket indexing, value in first row, first column
+zion_elevation[1,1] <- 0
+zion_elevation[1]
+
+# on multiband raster
+landsat[1]
+```
+
+```{r}
+test_raster <- zion_elevation
+test_raster[test_raster < 20] <- NA
+```
+
+
+```{r}
+point <- matrix(c(-113, 37.5), ncol = 2)
+
+terra::extract(zion_elevation, point)
+```
+
+```{r}
+clip <- rast(xmin = -113.3, xmax = -113, ymin = 37.2, ymax = 37.9,
+               resolution = 0.3,
+               vals = 1)
+
+
+zion_elevation_clip = zion_elevation[clip, drop = FALSE]
+zion_elevation_clip
+```
+
+
+```{r}
+tm_shape(zion_elevation) + 
+  tm_raster()
+
+tm_shape(zion_elevation_clip) + 
+  tm_raster()
+```
+
+Does clip only work for rectangular extent or can you use irregular shapes like a country outline
+
+```{r}
+rmask <- zion_elevation
+rmask[rmask < 2000] <- NA
+
+#bracket subsetting
+masked1 <- zion_elevation[rmask,drop = FALSE]
+
+
+masked2 <- terra::mask(zion_elevation, rmask)
+```
+
+
+```{r}
+tm_shape(masked1) + 
+  tm_raster()
+```
+
+
+```{r}
+# Local operations
+
+# band math
+zion_elevation + zion_elevation
+
+
+# Boolean
+zion_elevation > 5
+
+# Reclassify cells
+rcl <- matrix(c(1000, 1500, 1,
+                1500, 2000, 2,
+                2000, 2500, 3,
+                2500, 3000, 4),
+              ncol = 3, byrow = TRUE)
+
+
+reclassified <- terra::classify(zion_elevation, rcl = rcl)
+values(reclassified) <- as.factor(values(reclassified))
+```
+
+```{r}
+tm_shape(reclassified)+
+  tm_raster()
+```
+
+```{r}
+
+# define function
+ndvi_fun <- function(nir, red){
+  (nir - red)/(nir + red)
+}
+
+
+# Select the NIR(4) and red (3) bands
+ndvi_rast <- lapp(landsat[[c(4,3)]], fun = ndvi_fun)
+
+tm_shape(ndvi_rast) + 
+  tm_raster()
+
+
+
+```
+
+
+
+```{r}
+elevation_focal <- focal(zion_elevation,
+      w = matrix(1, nrow = 9, ncol = 9),
+      fun = min)
+
+tm_shape(elevation_focal) +
+  tm_raster()
+         
+```
+
+
+```{r}
+terra::zonal(zion_elevation, reclassified, fun = mean)
+```
+
+
+```{r}
+global(zion_elevation, mean)
+```
+
+
+#### Change the extent of the data
+```{r}
+extend <- terra::extend(zion_elevation, c(1, 200))
+extend2 <- terra::extend(zion_elevation, extend)
+```
+
+### Change Origin
+
+```{r}
+# Could use this to check if the origin is in the same place
+origin(zion_elevation)
+
+
+```
+
+
+### Changing Resolution
+```{r}
+# fact is how far out to go
+zion_elevation_coarse <- aggregate(zion_elevation,
+                                         fact = 5, 
+                                         fun = mean)
+
+zion_elevation_coarse
+
+zion_elevation_disagg <- disagg(zion_elevation_coarse,
+                                fact = 5,
+                                method = "bilinear")
+
+zion_elevation_disagg
+
+if(identical(zion_elevation, zion_elevation_disagg)){
+  print("match!")
+} else{
+  warning("don't match")
+}
+```
+
+
+
+#### Resampling
+
+```{r}
+target_rast <- rast(xmin = -113.2, xmax = -112.9,
+                    ymin = 37.4, ymax = 37.5,
+                    nrow = 450, ncol = 460,
+                    crs = crs(zion_elevation))
+
+elevation_resample <- terra::resample(zion_elevation, y = target_rast, method = "bilinear")
+```
+
